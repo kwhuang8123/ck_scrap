@@ -22,12 +22,13 @@ Original file is located at
 # !pip install selenium
 # !pip install fake_useragent
 
+
+
 from service.ck2gf import ck2gf
 from service.goldfish  import goldfish
 from bs4 import BeautifulSoup
 from matplotlib.pyplot import table
 from csv import reader
-from multiprocessing import Pool
 from fake_useragent import UserAgent
 from selenium import webdriver
 from selenium.webdriver.common.by import By
