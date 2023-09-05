@@ -22,13 +22,12 @@ Original file is located at
 # !pip install selenium
 # !pip install fake_useragent
 
-
-
 from service.ck2gf import ck2gf
 from service.goldfish  import goldfish
 from bs4 import BeautifulSoup
 from matplotlib.pyplot import table
 from csv import reader
+from multiprocessing import Pool
 from fake_useragent import UserAgent
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -67,9 +66,10 @@ class ck():
       self.original = []
       self.raw_list = []  #[name, 未處理setname, ck_price]
       self.main_list = [] #[name, 處理好的setname, ck_price]
-      self.final_list = []#[name, setname, ck_price, gf_price, rate]
+      self.result_list = []#[name, setname, ck_price, gf_price, rate]
       self.tmp_list = []
       self.None_list = []
+      self.false_list = []
       self.wrong_page=[]
       self.status=False
       self.false_404=[]
@@ -81,27 +81,25 @@ class ck():
       self.count=0
       self.Create_time=time.strftime("%Y%m%d", time.localtime()) #現在時間
       self.thread=4
-      
-      
 
   def start(self):#目前先用手動註解掉
+
+
       #爬取主要表格
       self.get_data()
       df = pd.DataFrame(self.raw_list)
-      # df.to_csv('/content/drive/MyDrive/mtginvestment/ck/raw_list_t.csv',index=False,header=False )# colab用
-      df.to_csv('C://Users/Admin/Downloads/ck/data/raw_list.csv', index=False,header=False )# local用
+      df.to_csv('/content/drive/MyDrive/mtginvestment/ck/raw_list_t.csv',index=False,header=False )
 
-      #self.readcsv()      # 讀取已經存好的csv檔(全部執行的話就要註解調不然會有同時出現兩個)
+      #self.readcsv()       # 讀取已經存好的csv檔(全部執行的話就要註解調不然會有同時出現兩個)
       self.filter_data()     # 過濾掉價格小於2的資料
-      self.search_thread()# goldfish查詢
+      self.search_thread()    # goldfish查詢
       self.save()
-      
       self.end_time = time.time()
+
       print(len(self.raw_list),'筆Raw_list')
       print(self.num+'筆資料查詢成功')
       print(len(self.None_list),'筆原本轉換為None')
-      print(len(self.false_url),'筆錯誤URL')
-      print(len(self.false_404),'筆拒絕404')
+      print(len(self.false_list),'筆錯誤')
       print(len(self.watch_list),'筆觀察清單')
       print('共',self.count,'筆資料')
       print('運行時間:'+str('%.2f'%(self.end_time-self.start_time))+'秒')
@@ -148,7 +146,7 @@ class ck():
         threads.append(threading.Thread( target=click, args=("Thread-"+str(i) , j , 100/n_thread ) ) )
         threads[i].start()
 
-        time.sleep(10)
+        time.sleep(6)
 
     for i in range(n_thread):
       threads[i].join()
@@ -213,26 +211,23 @@ class ck():
           self.my_queue.put(i)
 
       self.work()
-      self.num = str(len(self.final_list))
-      #print(self.final_list)
+
+      self.num = str(len(self.result_list))
 
   def get_price(self, url):
       #fake-useragent 套件可以隨機產生 User-Agent 字串
       ua = UserAgent()
       user_agent = ua.random
       headers = {'user-agent': user_agent}
+      #false_list: 錯誤 常見部分:404, 200(但沒中價)
+      #none_list: 自行過濾太複雜的版本
 
       if url[3] :#從url過濾是否能查到價格
-          time.sleep(5)
+
           self.count+=1
           res = requests.get(url[3], headers=headers)
           soup = BeautifulSoup(res.text, 'html.parser')
           b = soup.find_all('div', class_ = 'price-box-price')#中價
-
-          if res.status_code == 404:
-            print(self.count,"False url")
-            self.error+=1
-            self.false_url.append(url)
 
           if b:# 有些它的版本沒有分那麼細 如果沒查到東西就先忽略
               mid = b[0].text
@@ -240,23 +235,23 @@ class ck():
                       mid = mid.replace(',', '')
                       mid = mid[2:]
                       ck_price = float(url[2])
-                      rate = ck_price / float(mid) * 29
+                      rate = ck_price / float(mid) * 30
                       tmp = [url[0], url[1], url[2], mid, '%.2f'%rate]
-                      self.final_list.append(tmp)
+                      self.result_list.append(tmp)
                       print(self.count,tmp)
                       if rate>=20:
                         self.watch_list.append(tmp)
-
-
           else:
-            print(self.count,"False_404", res.status_code)
+            print(self.count,"False", res.status_code, b)
             self.error+=1
-            self.false_404.append(url)
+            self.false_list.append([url[0], url[1], url[2], url[3], res.status_code])
 
       if url[3]==None:
         self.count+=1
         self.None_list.append(url)
         print(self.count, "None")
+
+      time.sleep(4)
 
   def work(self):#應該有比較好的方法來開worker吧..
 
@@ -265,20 +260,26 @@ class ck():
       my_worker2 = Worker(self.my_queue)
       my_worker3 = Worker(self.my_queue)
       my_worker4 = Worker(self.my_queue)
+      my_worker5 = Worker(self.my_queue)
+      my_worker6 = Worker(self.my_queue)
+
       # 讓 Worker 開始處理資料
       my_worker1.start()
       my_worker2.start()
       my_worker3.start()
       my_worker4.start()
+      my_worker5.start()
+      my_worker6.start()
       # 等待所有 Worker 結束
       my_worker1.join()
       my_worker2.join()
       my_worker3.join()
       my_worker4.join()
+      my_worker5.join()
+      my_worker6.join()
 
   def save(self):
-      # path = '/content/drive/MyDrive/mtginvestment/ck/data/'+self.Create_time# colab用
-      path = 'C://Users/Admin/Downloads/ck/data/' + self.Create_time
+      path = '/content/drive/MyDrive/mtginvestment/ck/data/'+self.Create_time
       if not os.path.isdir(path):
         os.mkdir(path)
 
@@ -286,19 +287,15 @@ class ck():
 
       with open(path + '/result.csv', 'w',  newline='', encoding= 'utf-8') as output:
               csv_writer = csv.writer(output)
-              for i in self.final_list:
+              for i in self.result_list:
                   csv_writer.writerow(i)
-      with open(path + '/false_url.csv', 'w',  newline='', encoding= 'utf-8') as output_false_url:
-              csv_writer = csv.writer(output_false_url)
-              for i in self.false_url:
+      with open(path + '/false_list.csv', 'w',  newline='', encoding= 'utf-8') as output_false_list:
+              csv_writer = csv.writer(output_false_list)
+              for i in self.false_list:
                   csv_writer.writerow(i)
       with open(path + '/None_list.csv', 'w',  newline='', encoding= 'utf-8') as output_None_list:
               csv_writer = csv.writer(output_None_list)
               for i in self.None_list:
-                  csv_writer.writerow(i)
-      with open(path + '/false_404.csv', 'w',  newline='', encoding= 'utf-8') as output_false_404:
-              csv_writer = csv.writer(output_false_404)
-              for i in self.false_404:
                   csv_writer.writerow(i)
       with open(path + '/watch_list.csv', 'w',  newline='', encoding= 'utf-8') as output_watch_list:
               csv_writer = csv.writer(output_watch_list)
