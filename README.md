@@ -13,4 +13,4 @@ Project is created with:
 * chromium browser version: 112.0.5615.49
 	
 ## Setup
-To run this project, install it locally using npm:
+To run this project, put main.py and service in a folder, then run main.py in google colab.
